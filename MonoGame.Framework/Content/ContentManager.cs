@@ -191,7 +191,13 @@ namespace Microsoft.Xna.Framework.Content
 			}
 		}
 
-		public virtual T Load<T>(string assetName)
+        public virtual bool Loaded<T>(string assetName)
+        {
+            var key = assetName.Replace('\\', '/');
+            return loadedAssets.ContainsKey(key);
+        }
+
+        public virtual T Load<T>(string assetName)
 		{
             if (string.IsNullOrEmpty(assetName))
             {
