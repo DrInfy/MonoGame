@@ -40,8 +40,10 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		    Clear();
         }
-		
-		public SamplerState this [int index] 
+
+        public int Count => _samplers.Length;
+
+        public SamplerState this [int index] 
         {
 			get 
             { 
