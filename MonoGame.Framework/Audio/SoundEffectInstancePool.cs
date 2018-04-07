@@ -2,6 +2,7 @@
 // This file is subject to the terms and conditions defined in
 // file 'LICENSE.txt', which is part of this source code package.
 
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 
 namespace Microsoft.Xna.Framework.Audio
@@ -39,13 +40,19 @@ namespace Microsoft.Xna.Framework.Audio
         /// <param name="inst">The SoundEffectInstance</param>
         internal static void Add(SoundEffectInstance inst)
         {
-            if (inst._isPooled)
+            lock (_pooledInstances)
             {
-                _pooledInstances.Add(inst);
-                inst._effect = null;
+                if (inst._isPooled)
+                {
+                    _pooledInstances.Add(inst);
+                    inst._effect = null;
+                }    
             }
 
-            _playingInstances.Remove(inst);
+            lock (_playingInstances)
+            {
+                _playingInstances.Remove(inst);
+            }
         }
 
         /// <summary>
@@ -54,7 +61,10 @@ namespace Microsoft.Xna.Framework.Audio
         /// <param name="inst">The SoundEffectInstance to add to the playing list.</param>
         internal static void Remove(SoundEffectInstance inst)
         {
-            _playingInstances.Add(inst);
+            lock (_playingInstances)
+            {
+                _playingInstances.Add(inst);
+            }
         }
 
         /// <summary>
@@ -64,31 +74,35 @@ namespace Microsoft.Xna.Framework.Audio
         /// <returns>The SoundEffectInstance.</returns>
         internal static SoundEffectInstance GetInstance(bool forXAct)
         {
-            SoundEffectInstance inst = null;
-            var count = _pooledInstances.Count;
-            if (count > 0)
+            lock (_pooledInstances)
             {
-                // Grab the item at the end of the list so the remove doesn't copy all
-                // the list items down one slot.
-                inst = _pooledInstances[count - 1];
-                _pooledInstances.RemoveAt(count - 1);
+                SoundEffectInstance inst = null;
+                var count = _pooledInstances.Count;
+                if (count > 0)
+                {
+                    // Grab the item at the end of the list so the remove doesn't copy all
+                    // the list items down one slot.
+                    inst = _pooledInstances[count - 1];
+                    _pooledInstances.RemoveAt(count - 1);
 
-                // Reset used instance to the "default" state.
-                inst._isPooled = true;
-                inst._isXAct = forXAct;
-                inst.Volume = 1.0f;
-                inst.Pan = 0.0f;
-                inst.Pitch = 0.0f;
-                inst.IsLooped = false;
-            }
-            else
-            {
-                inst = new SoundEffectInstance();
-                inst._isPooled = true;
-                inst._isXAct = forXAct;
+                    // Reset used instance to the "default" state.
+                    inst._isPooled = true;
+                    inst._isXAct = forXAct;
+                    inst.Volume = 1.0f;
+                    inst.Pan = 0.0f;
+                    inst.Pitch = 0.0f;
+                    inst.IsLooped = false;
+                }
+                else
+                {
+                    inst = new SoundEffectInstance();
+                    inst._isPooled = true;
+                    inst._isXAct = forXAct;
+                }
+
+                return inst;
             }
 
-            return inst;
         }
 
         /// <summary>
@@ -100,20 +114,23 @@ namespace Microsoft.Xna.Framework.Audio
 #if OPENAL
             OpenALSoundController.GetInstance.Update();
 #endif
-
-            SoundEffectInstance inst = null;
-            // Cleanup instances which have finished playing.                    
-            for (var x = 0; x < _playingInstances.Count;)
+            lock (_playingInstances)
             {
-                inst = _playingInstances[x];
+                SoundEffectInstance inst = null;
 
-                if (inst.State == SoundState.Stopped || inst.IsDisposed || inst._effect == null)
+                // Cleanup instances which have finished playing.                    
+                for (var x = 0; x < _playingInstances.Count;)
                 {
-                    Add(inst);
-                    continue;
-                }
+                    inst = _playingInstances[x];
 
-                x++;
+                    if (inst.State == SoundState.Stopped || inst.IsDisposed || inst._effect == null)
+                    {
+                        Add(inst);
+                        continue;
+                    }
+
+                    x++;
+                }    
             }
         }
 
@@ -124,33 +141,38 @@ namespace Microsoft.Xna.Framework.Audio
         internal static void StopPooledInstances(SoundEffect effect)
         {
             SoundEffectInstance inst = null;
-
-            for (var x = 0; x < _playingInstances.Count;)
+            lock (_playingInstances)
             {
-                inst = _playingInstances[x];
-                if (inst._effect == effect)
+                for (var x = 0; x < _playingInstances.Count;)
                 {
-                    inst.Stop(true); // stop immediatly
-                    Add(inst);
-                    continue;
-                }
+                    inst = _playingInstances[x];
+                    if (inst._effect == effect)
+                    {
+                        inst.Stop(true); // stop immediatly
+                        Add(inst);
+                        continue;
+                    }
 
-                x++;
+                    x++;
+                }
             }
         }
 
         internal static void UpdateMasterVolume()
         {
-            foreach (var inst in _playingInstances)
+            lock (_playingInstances)
             {
-                // XAct sounds are not controlled by the SoundEffect
-                // master volume, so we can skip them completely.
-                if (inst._isXAct)
-                    continue;
+                foreach (var inst in _playingInstances)
+                {
+                    // XAct sounds are not controlled by the SoundEffect
+                    // master volume, so we can skip them completely.
+                    if (inst._isXAct)
+                        continue;
 
-                // Re-applying the volume to itself will update
-                // the sound with the current master volume.
-                inst.Volume = inst.Volume;
+                    // Re-applying the volume to itself will update
+                    // the sound with the current master volume.
+                    inst.Volume = inst.Volume;
+                }
             }
         }
 
@@ -160,17 +182,25 @@ namespace Microsoft.Xna.Framework.Audio
             // so as to destroy all SourceVoice instances,
             // before we can destroy our XAudio MasterVoice instance.
             // Otherwise XAudio shutdown fails, causing intermittent crashes.
-            foreach (var inst in _playingInstances)
+            lock (_playingInstances)
             {
-                inst.Dispose();
-            }
-            _playingInstances.Clear();
+                foreach (var inst in _playingInstances)
+                {
+                    inst.Dispose();
+                }
 
-            foreach (var inst in _pooledInstances)
-            {
-                inst.Dispose();
+                _playingInstances.Clear();
             }
-            _pooledInstances.Clear();
+
+            lock (_pooledInstances)
+            {
+                foreach (var inst in _pooledInstances)
+                {
+                    inst.Dispose();
+                }
+
+                _pooledInstances.Clear();
+            }
         }
     }
 }
