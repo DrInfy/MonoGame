@@ -214,8 +214,17 @@ namespace Microsoft.Xna.Framework.Audio
             {
                 if (immediate)
                 {
-                    _voice.Stop(0);
-                    _voice.FlushSourceBuffers();
+
+                    try
+                    {
+                        _voice.Stop(0);
+                        _voice.FlushSourceBuffers();
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine(e);
+                        //throw;
+                    }
                 }
                 else
                     _voice.Stop((int)PlayFlags.Tails);
