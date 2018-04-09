@@ -27,10 +27,7 @@ namespace Microsoft.Xna.Framework.Audio
         /// <value><c>true</c> if more sounds can be played; otherwise, <c>false</c>.</value>
         internal static bool SoundsAvailable
         {
-            get
-            {
-                return _playingInstances.Count < SoundEffect.MAX_PLAYING_INSTANCES;
-            }
+            get { return _playingInstances.Count < SoundEffect.MAX_PLAYING_INSTANCES; }
         }
 
         /// <summary>
@@ -46,7 +43,7 @@ namespace Microsoft.Xna.Framework.Audio
                 {
                     _pooledInstances.Add(inst);
                     inst._effect = null;
-                }    
+                }
             }
 
             lock (_playingInstances)
@@ -92,6 +89,8 @@ namespace Microsoft.Xna.Framework.Audio
                     inst.Pan = 0.0f;
                     inst.Pitch = 0.0f;
                     inst.IsLooped = false;
+                    inst.PlatformSetReverbMix(0);
+                    inst.PlatformClearFilter();
                 }
                 else
                 {
@@ -114,25 +113,30 @@ namespace Microsoft.Xna.Framework.Audio
 #if OPENAL
             OpenALSoundController.GetInstance.Update();
 #endif
+
             lock (_playingInstances)
             {
                 SoundEffectInstance inst = null;
-
                 // Cleanup instances which have finished playing.                    
                 for (var x = 0; x < _playingInstances.Count;)
                 {
                     inst = _playingInstances[x];
 
-                    if (inst.State == SoundState.Stopped || inst.IsDisposed || inst._effect == null)
+                    if (inst.IsDisposed || inst.State == SoundState.Stopped || (inst._effect == null && !inst._isDynamic))
                     {
+#if OPENAL
+                    if (!inst.IsDisposed)
+                        inst.Stop(true); // force stopping it to free its AL source
+#endif
                         Add(inst);
                         continue;
                     }
 
                     x++;
-                }    
+                }
             }
         }
+
 
         /// <summary>
         /// Iterates the list of playing instances, stop them and return them to the pool if they are instances of the given SoundEffect.
@@ -173,33 +177,6 @@ namespace Microsoft.Xna.Framework.Audio
                     // the sound with the current master volume.
                     inst.Volume = inst.Volume;
                 }
-            }
-        }
-
-        internal static void Shutdown()
-        {
-            // We need to dispose all SoundEffectInstances before shutdown,
-            // so as to destroy all SourceVoice instances,
-            // before we can destroy our XAudio MasterVoice instance.
-            // Otherwise XAudio shutdown fails, causing intermittent crashes.
-            lock (_playingInstances)
-            {
-                foreach (var inst in _playingInstances)
-                {
-                    inst.Dispose();
-                }
-
-                _playingInstances.Clear();
-            }
-
-            lock (_pooledInstances)
-            {
-                foreach (var inst in _pooledInstances)
-                {
-                    inst.Dispose();
-                }
-
-                _pooledInstances.Clear();
             }
         }
     }
