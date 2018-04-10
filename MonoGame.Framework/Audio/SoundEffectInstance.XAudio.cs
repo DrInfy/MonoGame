@@ -220,7 +220,7 @@ namespace Microsoft.Xna.Framework.Audio
                         _voice.Stop(0);
                         _voice.FlushSourceBuffers();
                     }
-                    catch (Exception e)
+                    catch (AccessViolationException e)
                     {
                         Console.WriteLine(e);
                         //throw;
